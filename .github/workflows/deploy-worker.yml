@@ -2,6 +2,9 @@ name: Deploy Agenda Camila Worker
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - fix/d1-cloud-sync-2026-11-12
 
 permissions:
   contents: read
