@@ -27,6 +27,9 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
+    if(request.method==="OPTIONS" && (path==="/api/appointments" || path.startsWith("/api/appointments/"))) {
+      return new Response(null,{status:204,headers:corsHeaders(request)});
+    }
     if (path === "/api/appointments") {
       if (!env.DB) return out({error:"Binding D1 DB não configurado no Worker."},503,request);
       try {
@@ -76,9 +79,6 @@ export default {
         ]);
         return out({ok:true,id},200,request);
       } catch(error) { return out({error:"Não foi possível excluir o agendamento."},500,request); }
-    }
-    if(request.method==="OPTIONS" && (path==="/api/appointments" || path.startsWith("/api/appointments/"))) {
-      return new Response(null,{status:204,headers:corsHeaders(request)});
     }
     if(env.ASSETS&&typeof env.ASSETS.fetch==="function")return env.ASSETS.fetch(request);
     return out({error:"Arquivos da agenda indisponíveis: configure o binding de Assets do Worker como ASSETS."},503,request);
