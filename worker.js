@@ -4,17 +4,17 @@ function out(value, status = 200) {
   }});
 }
 function isValidDate(value) {
-  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [y,m,d] = value.split("-").map(Number);
   const check = new Date(Date.UTC(y,m-1,d));
   return check.getUTCFullYear()===y && check.getUTCMonth()===m-1 && check.getUTCDate()===d;
 }
-function isValidTime(value) { return typeof value==="string" && /^(?:[01]\\d|2[0-3]):[0-5]\\d$/.test(value); }
+function isValidTime(value) { return typeof value==="string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value); }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const path = url.pathname.replace(/\\/+$/, "") || "/";
+    const path = url.pathname.replace(/\/+$/, "") || "/";
     if (path === "/api/appointments") {
       if (!env.DB) return out({error:"Binding D1 DB não configurado no Worker."},503);
       try {
