@@ -27,12 +27,11 @@ jobs:
       - name: Discover the existing D1 database and generate config
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: "c67508047d7ebde5add79706ae139574"
           EXPECTED_D1_ID: "9323ed1e-77c5-4b98-87e1-19b038068ffb"
         run: |
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN"
-          test -n "$CLOUDFLARE_ACCOUNT_ID"
           wrangler d1 list --json > /tmp/d1-list.json
           node --input-type=module <<'NODE'
           import fs from "node:fs";
