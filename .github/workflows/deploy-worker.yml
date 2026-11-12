@@ -1,0 +1,99 @@
+name: Deploy Agenda Camila Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/d1-cloud-sync-2026-11-12
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Wrangler
+        run: npm install --global wrangler@4
+
+      - name: Discover the existing D1 database and generate config
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: "c67508047d7ebde5add79706ae139574"
+          EXPECTED_D1_ID: "9323ed1e-77c5-4b98-87e1-19b038068ffb"
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          wrangler d1 list --json > /tmp/d1-list.json
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const raw = JSON.parse(fs.readFileSync("/tmp/d1-list.json", "utf8"));
+          const databases = Array.isArray(raw) ? raw : (raw.result || raw.databases || []);
+          const db = databases.find(x => x.uuid === process.env.EXPECTED_D1_ID || x.database_id === process.env.EXPECTED_D1_ID || x.id === process.env.EXPECTED_D1_ID);
+          if (!db) throw new Error("O banco D1 esperado não foi encontrado na conta Cloudflare autenticada. Nenhuma implantação foi realizada.");
+          const databaseName = db.name;
+          if (!databaseName) throw new Error("A Cloudflare não retornou o nome do banco D1. Nenhuma implantação foi realizada.");
+          const config = {
+            "$schema": "node_modules/wrangler/config-schema.json",
+            "name": "agenda-camila-valadares",
+            "main": "worker.js",
+            "compatibility_date": "2026-11-12",
+            "workers_dev": true,
+            "d1_databases": [{
+              "binding": "DB",
+              "database_name": databaseName,
+              "database_id": process.env.EXPECTED_D1_ID
+            }]
+          };
+          fs.writeFileSync("wrangler.jsonc", JSON.stringify(config, null, 2) + "\n");
+          console.log("Configuração gerada para o banco D1 existente:", databaseName);
+          NODE
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config wrangler.jsonc
+
+      - name: Smoke test API, CORS, conflict and D1 persistence
+        run: |
+          node --input-type=module <<'NODE'
+          import { randomUUID } from "node:crypto";
+          const base = "https://agenda-camila-valadares.brasil-moura.workers.dev";
+          const origin = "https://danielbrasilioc.github.io";
+          const id = randomUUID();
+          const conflictId = randomUUID();
+          const payload = { id, client: "Teste automatizado Agenda Camila", phone: "00000000000", service: "Teste técnico", duration: 60, date: "2099-12-31", time: "10:00", notes: "Teste temporário de persistência" };
+          const request = (path, init={}) => fetch(base + path, init);
+          let created = false;
+          try {
+            const preflight = await request("/api/appointments", { method:"OPTIONS", headers:{ Origin:origin, "Access-Control-Request-Method":"POST", "Access-Control-Request-Headers":"content-type" }});
+            if (preflight.status !== 204 || preflight.headers.get("access-control-allow-origin") !== origin) throw new Error("Falha no preflight CORS: " + preflight.status);
+            const post = await request("/api/appointments", { method:"POST", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify(payload) });
+            if (!post.ok) throw new Error("POST falhou: " + post.status + " " + await post.text());
+            created = true;
+            const get = await request("/api/appointments", { headers:{ Origin:origin } });
+            const rows = await get.json();
+            if (!get.ok || !Array.isArray(rows) || !rows.some(x => x.id === id && x.client === payload.client)) throw new Error("GET não confirmou a gravação no D1.");
+            const conflict = await request("/api/appointments", { method:"POST", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({...payload,id:conflictId}) });
+            if (conflict.status !== 409) throw new Error("Conflito de horário deveria retornar 409, retornou " + conflict.status);
+            const del = await request("/api/appointments/" + id, { method:"DELETE", headers:{ Origin:origin } });
+            if (!del.ok) throw new Error("DELETE falhou: " + del.status);
+            created = false;
+            const verify = await request("/api/appointments");
+            const remaining = await verify.json();
+            if (remaining.some(x => x.id === id || x.id === conflictId)) throw new Error("O registro temporário permaneceu após a exclusão.");
+            console.log("OK: CORS, POST, leitura persistida, conflito 409 e DELETE confirmados.");
+          } finally {
+            if (created) await request("/api/appointments/" + id, { method:"DELETE" });
+            await request("/api/appointments/" + conflictId, { method:"DELETE" });
+          }
+          NODE
