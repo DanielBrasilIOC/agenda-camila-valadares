@@ -75,6 +75,10 @@ jobs:
           const request = (path, init={}) => fetch(base + path, init);
           let created = false;
           try {
+            const cleanup = await request("/api/appointments/10bff6c6-9587-4eed-a03e-6af56e2e68ca", { method:"DELETE" });
+            if (!cleanup.ok) throw new Error("Não foi possível remover o registro temporário autorizado: " + cleanup.status);
+            const afterCleanup = await (await request("/api/appointments", { headers:{ Origin:origin } })).json();
+            if (afterCleanup.some(x => x.id === "10bff6c6-9587-4eed-a03e-6af56e2e68ca")) throw new Error("O registro temporário anterior ainda consta no D1.");
             const preflight = await request("/api/appointments", { method:"OPTIONS", headers:{ Origin:origin, "Access-Control-Request-Method":"POST", "Access-Control-Request-Headers":"content-type" }});
             if (preflight.status !== 204 || preflight.headers.get("access-control-allow-origin") !== origin) throw new Error("Falha no preflight CORS: " + preflight.status);
             const post = await request("/api/appointments", { method:"POST", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify(payload) });
@@ -86,7 +90,7 @@ jobs:
           const complete = await request("/api/appointments/" + id, { method:"PATCH", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({action:"complete"}) });
           if (!complete.ok) throw new Error("PATCH de conclusão falhou: " + complete.status + " " + await complete.text());
           const afterComplete = await (await request("/api/appointments", { headers:{ Origin:origin } })).json();
-          if (!afterComplete.some(x => x.id === id && x.completed_at)) throw new Error("Conclusão do atendimento não persistiu no D1.");
+          if (!afterComplete.some(x => x.id === id && x.completed_at === "2026-11-13T13:00:00.000Z")) throw new Error("A conclusão não persistiu com a data/hora do serviço (Brasília) no D1.");
           const contacted = await request("/api/appointments/" + id, { method:"PATCH", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({action:"contacted"}) });
           if (!contacted.ok) throw new Error("PATCH de contato falhou: " + contacted.status + " " + await contacted.text());
           const afterContact = await (await request("/api/appointments", { headers:{ Origin:origin } })).json();
