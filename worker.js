@@ -22,6 +22,12 @@ function isValidDate(value) {
   return check.getUTCFullYear()===y && check.getUTCMonth()===m-1 && check.getUTCDate()===d;
 }
 function isValidTime(value) { return typeof value==="string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value); }
+async function ensureReminderColumns(db) {
+  const {results=[]}=await db.prepare("PRAGMA table_info(appointments)").all();
+  const names=new Set(results.map(x=>x.name));
+  if(!names.has("completed_at")) await db.prepare("ALTER TABLE appointments ADD COLUMN completed_at TEXT").run();
+  if(!names.has("contacted_at")) await db.prepare("ALTER TABLE appointments ADD COLUMN contacted_at TEXT").run();
+}
 
 export default {
   async fetch(request, env) {
