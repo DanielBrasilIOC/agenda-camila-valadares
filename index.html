@@ -66,8 +66,12 @@ async function markAsCompleted(){
  const scheduled=new Date(b.date+'T'+b.time+':00-03:00');
  if(scheduled.getTime()>Date.now()){alert('Este atendimento ainda não chegou ao horário agendado. Ele só poderá ser marcado como realizado depois do atendimento.');return;}
  const serviceDate=fromIso(b.date).toLocaleDateString('pt-BR');
- if(!confirm('Confirmar que o atendimento de sobrancelha de '+b.client+' foi realmente realizado em '+serviceDate+' às '+b.time+'? A contagem dos 20 dias será feita a partir da data do atendimento.'))return;
- try{await requestApi(API+'/'+encodeURIComponent(b.id),{method:'PATCH',body:JSON.stringify({action:'complete'})});await refreshFromCloud();closeForm();alert('Atendimento marcado como realizado. O lembrete ficará disponível 20 dias após a data do serviço.');}
+ const eyebrow=isEyebrowService(b.service);
+ const question=eyebrow
+  ? 'Confirmar que o atendimento de sobrancelha ('+b.service+') de '+b.client+' foi realmente realizado em '+serviceDate+' às '+b.time+'? A contagem dos 20 dias será feita a partir da data do atendimento.'
+  : 'Confirmar que o serviço de '+b.service+' de '+b.client+' foi realmente realizado em '+serviceDate+' às '+b.time+'?';
+ if(!confirm(question))return;
+ try{await requestApi(API+'/'+encodeURIComponent(b.id),{method:'PATCH',body:JSON.stringify({action:'complete'})});await refreshFromCloud();closeForm();alert(eyebrow?'Atendimento de sobrancelha marcado como realizado. O lembrete de retorno ficará disponível 20 dias após a data do serviço.':'Serviço marcado como realizado e incluído no financeiro. Não será criada contagem de 20 dias para este serviço.');}
  catch(e){alert('Não foi possível registrar a conclusão: '+e.message);}
 }
 async function markContactDone(id){
