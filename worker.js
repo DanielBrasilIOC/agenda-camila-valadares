@@ -82,9 +82,21 @@ export default {
       let body;try{body=await request.json();}catch{return out({error:"Corpo JSON inválido."},400,request);}
       const action=body?.action;
       if(!id||!["complete","contacted"].includes(action))return out({error:"Ação de atendimento inválida."},400,request);
-      const column=action==="complete"?"completed_at":"contacted_at";
-      try { const result=await env.DB.prepare("UPDATE appointments SET "+column+" = ? WHERE id = ?").bind(new Date().toISOString(),id).run();
-        if(!result.meta?.changes)return out({error:"Agendamento não encontrado."},404,request);
+      try {
+        if(action==="complete"){
+          const appointment=await env.DB.prepare("SELECT service, date, time, completed_at FROM appointments WHERE id = ?").bind(id).first();
+          if(!appointment)return out({error:"Agendamento não encontrado."},404,request);
+          if(appointment.service!=="Sobrancelha")return out({error:"A confirmação de realização está disponível somente para sobrancelha."},400,request);
+          if(appointment.completed_at)return out({error:"Este atendimento já foi marcado como realizado."},409,request);
+          if(!isValidDate(appointment.date)||!isValidTime(appointment.time))return out({error:"Data ou horário do atendimento inválido."},400,request);
+          const completedAt=new Date(appointment.date+"T"+appointment.time+":00-03:00");
+          if(completedAt.getTime()>Date.now())return out({error:"Só é possível marcar como realizado depois do horário agendado."},409,request);
+          const result=await env.DB.prepare("UPDATE appointments SET completed_at = ? WHERE id = ? AND completed_at IS NULL").bind(completedAt.toISOString(),id).run();
+          if(!result.meta?.changes)return out({error:"O atendimento não foi atualizado. Atualize a agenda e tente novamente."},409,request);
+        } else {
+          const result=await env.DB.prepare("UPDATE appointments SET contacted_at = ? WHERE id = ?").bind(new Date().toISOString(),id).run();
+          if(!result.meta?.changes)return out({error:"Agendamento não encontrado."},404,request);
+        }
         return out({ok:true,id,action},200,request);
       } catch(error){return out({error:"Não foi possível atualizar o status do atendimento."},500,request);}
     }
