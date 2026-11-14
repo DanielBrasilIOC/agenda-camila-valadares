@@ -76,13 +76,13 @@ jobs:
           let created = false;
           try {
             const preflight = await request("/api/appointments", { method:"OPTIONS", headers:{ Origin:origin, "Access-Control-Request-Method":"POST", "Access-Control-Request-Headers":"content-type" }});
-            if (preflight.status !== 204 || preflight.headers.get("access-control-allow-origin") !== origin) throw new Error("Falha no preflight CORS: " + preflight.status);
+            if (preflight.status !== 204 || preflight.headers.get("access-control-allow-origin") !== origin) throw new Error("Falha no preflight CORS POST: " + preflight.status);\n            const patchPreflight = await request("/api/appointments/" + id, { method:"OPTIONS", headers:{ Origin:origin, "Access-Control-Request-Method":"PATCH", "Access-Control-Request-Headers":"content-type" }});\n            if (patchPreflight.status !== 204 || patchPreflight.headers.get("access-control-allow-origin") !== origin || !patchPreflight.headers.get("access-control-allow-methods")?.split(",").map(x=>x.trim()).includes("PATCH")) throw new Error("Falha no preflight CORS PATCH.");
             const post = await request("/api/appointments", { method:"POST", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify(payload) });
             if (!post.ok) throw new Error("POST falhou: " + post.status + " " + await post.text());
             created = true;
             const get = await request("/api/appointments", { headers:{ Origin:origin } });
             const rows = await get.json();
-            if (!get.ok || !Array.isArray(rows) || !rows.some(x => x.id === id && x.client === payload.client)) throw new Error("GET não confirmou a gravação no D1.");
+            if (!get.ok || !Array.isArray(rows) || !rows.some(x => x.id === id && x.client === payload.client && Number(x.service_price) === 45)) throw new Error("GET não confirmou a gravação e o preço no D1.");\n            const complete = await request("/api/appointments/" + id, { method:"PATCH", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({action:"complete"}) });\n            if (!complete.ok) throw new Error("PATCH complete falhou: " + complete.status + " " + await complete.text());\n            const afterComplete = await request("/api/appointments", { headers:{ Origin:origin } });\n            const completedRows = await afterComplete.json();\n            if (!completedRows.some(x => x.id === id && x.completed_at && Number(x.service_price) === 45)) throw new Error("Conclusão/valor não persistidos.");\n            const contact = await request("/api/appointments/" + id, { method:"PATCH", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({action:"contacted"}) });\n            if (!contact.ok) throw new Error("PATCH contacted falhou: " + contact.status + " " + await contact.text());\n            const afterContact = await request("/api/appointments", { headers:{ Origin:origin } });\n            const contactRows = await afterContact.json();\n            if (!contactRows.some(x => x.id === id && x.contacted_at)) throw new Error("Contato não persistido.");
           const complete = await request("/api/appointments/" + id, { method:"PATCH", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({action:"complete"}) });
           if (!complete.ok) throw new Error("PATCH de conclusão falhou: " + complete.status + " " + await complete.text());
           const afterComplete = await (await request("/api/appointments", { headers:{ Origin:origin } })).json();
@@ -99,7 +99,7 @@ jobs:
             const verify = await request("/api/appointments");
             const remaining = await verify.json();
             if (remaining.some(x => x.id === id || x.id === conflictId)) throw new Error("O registro temporário permaneceu após a exclusão.");
-            console.log("OK: CORS, POST, leitura persistida, conflito 409 e DELETE confirmados.");
+            console.log("OK: CORS POST/PATCH, POST/GET, preço, conclusão, contato, conflito 409 e DELETE confirmados.");
           } finally {
             if (created) await request("/api/appointments/" + id, { method:"DELETE" });
             await request("/api/appointments/" + conflictId, { method:"DELETE" });
