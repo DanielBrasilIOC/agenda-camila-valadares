@@ -6,7 +6,7 @@ function corsHeaders(request) {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
     "vary": "Origin",
-    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+    "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
     "access-control-allow-headers": "Content-Type"
   };
   if (ALLOWED_ORIGINS.has(origin)) headers["access-control-allow-origin"] = origin;
