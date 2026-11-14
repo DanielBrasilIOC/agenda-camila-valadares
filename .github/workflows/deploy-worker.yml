@@ -83,6 +83,14 @@ jobs:
             const get = await request("/api/appointments", { headers:{ Origin:origin } });
             const rows = await get.json();
             if (!get.ok || !Array.isArray(rows) || !rows.some(x => x.id === id && x.client === payload.client)) throw new Error("GET não confirmou a gravação no D1.");
+          const complete = await request("/api/appointments/" + id, { method:"PATCH", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({action:"complete"}) });
+          if (!complete.ok) throw new Error("PATCH de conclusão falhou: " + complete.status + " " + await complete.text());
+          const afterComplete = await (await request("/api/appointments", { headers:{ Origin:origin } })).json();
+          if (!afterComplete.some(x => x.id === id && x.completed_at)) throw new Error("Conclusão do atendimento não persistiu no D1.");
+          const contacted = await request("/api/appointments/" + id, { method:"PATCH", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({action:"contacted"}) });
+          if (!contacted.ok) throw new Error("PATCH de contato falhou: " + contacted.status + " " + await contacted.text());
+          const afterContact = await (await request("/api/appointments", { headers:{ Origin:origin } })).json();
+          if (!afterContact.some(x => x.id === id && x.contacted_at)) throw new Error("Registro de contato não persistiu no D1.");
             const conflict = await request("/api/appointments", { method:"POST", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({...payload,id:conflictId}) });
             if (conflict.status !== 409) throw new Error("Conflito de horário deveria retornar 409, retornou " + conflict.status);
             const del = await request("/api/appointments/" + id, { method:"DELETE", headers:{ Origin:origin } });
