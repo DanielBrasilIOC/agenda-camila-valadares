@@ -6,7 +6,7 @@ function corsHeaders(request) {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
     "vary": "Origin",
-    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+    "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
     "access-control-allow-headers": "Content-Type"
   };
   if (ALLOWED_ORIGINS.has(origin)) headers["access-control-allow-origin"] = origin;
@@ -33,25 +33,26 @@ export default {
     if (path === "/api/appointments") {
       if (!env.DB) return out({error:"Binding D1 DB não configurado no Worker."},503,request);
       try {
+        await ensureReminderColumns(env.DB);
         if (request.method === "GET") {
-          const {results=[]}=await env.DB.prepare("SELECT id, client, phone, service, duration, date, time, notes, created_at FROM appointments ORDER BY date, time").all();
+          const {results=[]}=await env.DB.prepare("SELECT id, client, phone, service, duration, date, time, notes, created_at, completed_at, contacted_at FROM appointments ORDER BY date, time").all();
           return out(results,200,request);
         }
         if (request.method === "POST") {
           let body;
           try { body=await request.json(); } catch { return out({error:"Corpo JSON inválido."},400,request); }
-          const {id,client,phone="",service,duration,date,time,notes=""}=body||{};
+          const {id,client,phone="",service,duration,date,time,notes="",completed_at=null,contacted_at=null}=body||{};
           const minutes=Number(duration);
           if (typeof id!=="string"||!id.trim()||typeof client!=="string"||!client.trim()||
               typeof phone!=="string"||typeof service!=="string"||!service.trim()||
               !isValidDate(date)||!isValidTime(time)||!Number.isInteger(minutes)||minutes<=0||
-              minutes%30!==0||typeof notes!=="string") return out({error:"Dados do agendamento inválidos."},400,request);
+              minutes%30!==0||typeof notes!=="string"||(completed_at!==null&&typeof completed_at!=="string")||(contacted_at!==null&&typeof contacted_at!=="string")) return out({error:"Dados do agendamento inválidos."},400,request);
           const [hour,minute]=time.split(":").map(Number),start=hour*60+minute;
           if (start<360||start+minutes>1320) return out({error:"O atendimento deve ocorrer entre 06:00 e 22:00."},400,request);
           const statements=[
             env.DB.prepare("DELETE FROM appointment_slots WHERE appointment_id = ?").bind(id),
             env.DB.prepare("DELETE FROM appointments WHERE id = ?").bind(id),
-            env.DB.prepare("INSERT INTO appointments (id, client, phone, service, duration, date, time, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(id,client.trim(),phone.trim(),service.trim(),minutes,date,time,notes.trim())
+            env.DB.prepare("INSERT INTO appointments (id, client, phone, service, duration, date, time, notes, completed_at, contacted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(id,client.trim(),phone.trim(),service.trim(),minutes,date,time,notes.trim(),completed_at,contacted_at)
           ];
           for(let offset=0;offset<minutes;offset+=30){
             const m=start+offset,slot=String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
@@ -68,6 +69,19 @@ export default {
       } catch(error) { return out({error:"Erro ao consultar ou gravar os agendamentos."},500,request); }
     }
     const prefix="/api/appointments/";
+    if(path.startsWith(prefix)&&request.method==="PATCH"){
+      if(!env.DB)return out({error:"Binding D1 DB não configurado no Worker."},503,request);
+      await ensureReminderColumns(env.DB);
+      let id;try{id=decodeURIComponent(path.slice(prefix.length));}catch{return out({error:"Identificador inválido."},400,request);}
+      let body;try{body=await request.json();}catch{return out({error:"Corpo JSON inválido."},400,request);}
+      const action=body?.action;
+      if(!id||!["complete","contacted"].includes(action))return out({error:"Ação de atendimento inválida."},400,request);
+      const column=action==="complete"?"completed_at":"contacted_at";
+      try { const result=await env.DB.prepare("UPDATE appointments SET "+column+" = ? WHERE id = ?").bind(new Date().toISOString(),id).run();
+        if(!result.meta?.changes)return out({error:"Agendamento não encontrado."},404,request);
+        return out({ok:true,id,action},200,request);
+      } catch(error){return out({error:"Não foi possível atualizar o status do atendimento."},500,request);}
+    }
     if(path.startsWith(prefix)&&request.method==="DELETE"){
       if(!env.DB)return out({error:"Binding D1 DB não configurado no Worker."},503,request);
       let id;try{id=decodeURIComponent(path.slice(prefix.length));}catch{return out({error:"Identificador inválido."},400,request);}
