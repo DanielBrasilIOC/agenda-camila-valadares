@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - fix/d1-cloud-sync-2026-11-12
 
 permissions:
