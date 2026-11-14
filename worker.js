@@ -6,7 +6,7 @@ function corsHeaders(request) {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
     "vary": "Origin",
-    "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
     "access-control-allow-headers": "Content-Type"
   };
   if (ALLOWED_ORIGINS.has(origin)) headers["access-control-allow-origin"] = origin;
@@ -22,12 +22,7 @@ function isValidDate(value) {
   return check.getUTCFullYear()===y && check.getUTCMonth()===m-1 && check.getUTCDate()===d;
 }
 function isValidTime(value) { return typeof value==="string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value); }
-async function ensureReminderColumns(db) {
-  const {results=[]}=await db.prepare("PRAGMA table_info(appointments)").all();
-  const names=new Set(results.map(x=>x.name));
-  if(!names.has("completed_at")) await db.prepare("ALTER TABLE appointments ADD COLUMN completed_at TEXT").run();
-  if(!names.has("contacted_at")) await db.prepare("ALTER TABLE appointments ADD COLUMN contacted_at TEXT").run();
-}
+async function ensureSchema(db) { const info=await db.prepare("PRAGMA table_info(appointments)").all(); const cols=new Set((info.results||[]).map(x=>x.name)); for(const [n,sql] of [["service_price","ALTER TABLE appointments ADD COLUMN service_price REAL NOT NULL DEFAULT 0"],["completed_at","ALTER TABLE appointments ADD COLUMN completed_at TEXT"],["contacted_at","ALTER TABLE appointments ADD COLUMN contacted_at TEXT"]]) if(!cols.has(n)) await db.prepare(sql).run(); }
 
 export default {
   async fetch(request, env) {
@@ -38,27 +33,27 @@ export default {
     }
     if (path === "/api/appointments") {
       if (!env.DB) return out({error:"Binding D1 DB não configurado no Worker."},503,request);
-      try {
-        await ensureReminderColumns(env.DB);
+      try { await ensureSchema(env.DB);
         if (request.method === "GET") {
-          const {results=[]}=await env.DB.prepare("SELECT id, client, phone, service, duration, date, time, notes, created_at, completed_at, contacted_at FROM appointments ORDER BY date, time").all();
+          const {results=[]}=await env.DB.prepare("SELECT id, client, phone, service, duration, date, time, notes, created_at, service_price, completed_at, contacted_at FROM appointments ORDER BY date, time").all();
           return out(results,200,request);
         }
         if (request.method === "POST") {
           let body;
           try { body=await request.json(); } catch { return out({error:"Corpo JSON inválido."},400,request); }
-          const {id,client,phone="",service,duration,date,time,notes="",completed_at=null,contacted_at=null}=body||{};
+          const {id,client,phone="",service,duration,date,time,notes="",service_price=0}=body||{}; const price=Number(service_price);
           const minutes=Number(duration);
           if (typeof id!=="string"||!id.trim()||typeof client!=="string"||!client.trim()||
               typeof phone!=="string"||typeof service!=="string"||!service.trim()||
               !isValidDate(date)||!isValidTime(time)||!Number.isInteger(minutes)||minutes<=0||
-              minutes%30!==0||typeof notes!=="string"||(completed_at!==null&&typeof completed_at!=="string")||(contacted_at!==null&&typeof contacted_at!=="string")) return out({error:"Dados do agendamento inválidos."},400,request);
+              minutes%15!==0||!Number.isFinite(price)||price<0||typeof notes!=="string") return out({error:"Dados do agendamento inválidos."},400,request);
           const [hour,minute]=time.split(":").map(Number),start=hour*60+minute;
           if (start<360||start+minutes>1320) return out({error:"O atendimento deve ocorrer entre 06:00 e 22:00."},400,request);
+          const previous=await env.DB.prepare("SELECT completed_at, contacted_at FROM appointments WHERE id = ?").bind(id).first();
           const statements=[
             env.DB.prepare("DELETE FROM appointment_slots WHERE appointment_id = ?").bind(id),
             env.DB.prepare("DELETE FROM appointments WHERE id = ?").bind(id),
-            env.DB.prepare("INSERT INTO appointments (id, client, phone, service, duration, date, time, notes, completed_at, contacted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(id,client.trim(),phone.trim(),service.trim(),minutes,date,time,notes.trim(),completed_at,contacted_at)
+            env.DB.prepare("INSERT INTO appointments (id, client, phone, service, duration, date, time, notes, service_price, completed_at, contacted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(id,client.trim(),phone.trim(),service.trim(),minutes,date,time,notes.trim(),price,previous?.completed_at||null,previous?.contacted_at||null)
           ];
           for(let offset=0;offset<minutes;offset+=30){
             const m=start+offset,slot=String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
@@ -77,28 +72,13 @@ export default {
     const prefix="/api/appointments/";
     if(path.startsWith(prefix)&&request.method==="PATCH"){
       if(!env.DB)return out({error:"Binding D1 DB não configurado no Worker."},503,request);
-      await ensureReminderColumns(env.DB);
-      let id;try{id=decodeURIComponent(path.slice(prefix.length));}catch{return out({error:"Identificador inválido."},400,request);}
+      try{await ensureSchema(env.DB);let id;try{id=decodeURIComponent(path.slice(prefix.length));}catch{return out({error:"Identificador inválido."},400,request);}
       let body;try{body=await request.json();}catch{return out({error:"Corpo JSON inválido."},400,request);}
-      const action=body?.action;
-      if(!id||!["complete","contacted"].includes(action))return out({error:"Ação de atendimento inválida."},400,request);
-      try {
-        if(action==="complete"){
-          const appointment=await env.DB.prepare("SELECT service, date, time, completed_at FROM appointments WHERE id = ?").bind(id).first();
-          if(!appointment)return out({error:"Agendamento não encontrado."},404,request);
-          if(appointment.service!=="Sobrancelha")return out({error:"A confirmação de realização está disponível somente para sobrancelha."},400,request);
-          if(appointment.completed_at)return out({error:"Este atendimento já foi marcado como realizado."},409,request);
-          if(!isValidDate(appointment.date)||!isValidTime(appointment.time))return out({error:"Data ou horário do atendimento inválido."},400,request);
-          const completedAt=new Date(appointment.date+"T"+appointment.time+":00-03:00");
-          if(completedAt.getTime()>Date.now())return out({error:"Só é possível marcar como realizado depois do horário agendado."},409,request);
-          const result=await env.DB.prepare("UPDATE appointments SET completed_at = ? WHERE id = ? AND completed_at IS NULL").bind(completedAt.toISOString(),id).run();
-          if(!result.meta?.changes)return out({error:"O atendimento não foi atualizado. Atualize a agenda e tente novamente."},409,request);
-        } else {
-          const result=await env.DB.prepare("UPDATE appointments SET contacted_at = ? WHERE id = ?").bind(new Date().toISOString(),id).run();
-          if(!result.meta?.changes)return out({error:"Agendamento não encontrado."},404,request);
-        }
-        return out({ok:true,id,action},200,request);
-      } catch(error){return out({error:"Não foi possível atualizar o status do atendimento."},500,request);}
+      const action=body?.action;if(!id||!["complete","contacted"].includes(action))return out({error:"Ação inválida."},400,request);
+      const row=await env.DB.prepare("SELECT id, service, date, time FROM appointments WHERE id = ?").bind(id).first();if(!row)return out({error:"Agendamento não encontrado."},404,request);
+      if(action==="complete"){if(String(row.service).startsWith("Bloqueio"))return out({error:"Bloqueios não são serviços realizados."},400,request);const scheduled=new Date(row.date+"T"+row.time+":00-03:00");if(scheduled.getTime()>Date.now())return out({error:"O horário agendado ainda não ocorreu."},409,request);await env.DB.prepare("UPDATE appointments SET completed_at=COALESCE(completed_at,strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE id=?").bind(id).run();}
+      else await env.DB.prepare("UPDATE appointments SET contacted_at=COALESCE(contacted_at,strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE id=?").bind(id).run();
+      return out({ok:true,id,action},200,request);}catch{return out({error:"Não foi possível atualizar o atendimento."},500,request);}
     }
     if(path.startsWith(prefix)&&request.method==="DELETE"){
       if(!env.DB)return out({error:"Binding D1 DB não configurado no Worker."},503,request);
