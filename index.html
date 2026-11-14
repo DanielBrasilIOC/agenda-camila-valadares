@@ -15,7 +15,7 @@
 <section class="stats"><div class="stat"><small>Agendamentos na semana</small><strong id="weekCount">0</strong></div><div class="stat"><small>Atendimentos hoje</small><strong id="todayCount">0</strong></div><div class="stat"><small>Horários livres hoje</small><strong id="freeCount">12</strong></div><div class="stat"><small>Clientes cadastradas</small><strong id="clientCount">0</strong></div></section>
 <div class="layout"><section class="panel"><div class="panel-head"><h2>Agenda semanal</h2><div class="controls"><button class="iconbtn" id="prev">‹</button><div class="week-label" id="weekLabel"></div><button class="iconbtn" id="next">›</button></div></div><div class="week"><div class="grid" id="calendar"></div></div><div class="mobile-week" id="mobileWeek"></div></section>
 <aside class="panel side"><h3>Próximos atendimentos</h3><div id="upcoming" class="side-empty">Nenhum agendamento cadastrado.</div></aside></div>
-<section class="panel maintenance"><h2>Manutenção de sobrancelha</h2><p class="maintenance-intro">Clientes com atendimento marcado como realizado há 20 dias ou mais. Entre em contato para oferecer a manutenção.</p><div id="maintenanceList" class="side-empty">Nenhuma manutenção pendente no momento.</div></section>
+<section class="panel maintenance"><h2>Manutenção de sobrancelha</h2><p class="maintenance-intro">Clientes com atendimento de sobrancelha confirmado como realizado há 20 dias ou mais. Entre em contato para oferecer a manutenção.</p><div id="maintenanceList" class="side-empty">Nenhuma manutenção pendente no momento.</div></section>
 <p class="foot">Agenda Camila Valadares · Horário de Brasília · Atendimento personalizado</p></main>
 <div class="modal" id="modal"><form class="dialog" id="form"><h2 id="formTitle">Novo agendamento</h2><div class="fields">
 <div class="field full"><label for="client">Nome da cliente</label><input id="client" required maxlength="70" placeholder="Nome completo"></div>
@@ -52,17 +52,20 @@ function openReminderWhatsApp(b){let digits=String(b.phone||'').replace(/\\D/g,'
 function renderMaintenance(){
  const today=fromIso(iso(new Date()));
  const due=bookings.filter(b=>b.service==='Sobrancelha'&&b.completed_at&&!b.contacted_at)
- .map(b=>({...b,dueDate:addDays(iso(new Date(b.completed_at)),20)}))
+ .map(b=>({...b,dueDate:addDays(b.date,20)}))
  .filter(b=>b.dueDate<=today).sort((a,b)=>a.dueDate-b.dueDate);
  const list=$('maintenanceList');
  if(!due.length){list.className='side-empty';list.textContent='Nenhuma manutenção pendente no momento.';return;}
  list.className='';
- list.innerHTML=due.map(b=>{let days=Math.floor((today-b.dueDate)/86400000);return '<div class="reminder"><div class="reminder-info"><strong>'+esc(b.client)+'</strong><small>Atendimento realizado em '+fmt(new Date(b.completed_at))+' · Aviso desde '+fmt(b.dueDate)+(days>0?' · '+days+' dia(s) de atraso':'')+'</small></div><div class="reminder-actions"><button type="button" class="btn primary" data-reminder-whatsapp="'+esc(b.id)+'">Entrar em contato</button><button type="button" class="btn" data-reminder-done="'+esc(b.id)+'">Contato realizado</button></div></div>'}).join('');
+ list.innerHTML=due.map(b=>{let days=Math.floor((today-b.dueDate)/86400000);return '<div class="reminder"><div class="reminder-info"><strong>'+esc(b.client)+'</strong><small>Atendimento realizado em '+fmt(fromIso(b.date))+' · Aviso desde '+fmt(b.dueDate)+(days>0?' · '+days+' dia(s) de atraso':'')+'</small></div><div class="reminder-actions"><button type="button" class="btn primary" data-reminder-whatsapp="'+esc(b.id)+'">Entrar em contato</button><button type="button" class="btn" data-reminder-done="'+esc(b.id)+'">Contato realizado</button></div></div>'}).join('');
 }
 async function markAsCompleted(){
  if(!editing)return;const b=bookings.find(x=>x.id===editing);if(!b||b.service!=='Sobrancelha')return;
- if(!confirm('Confirmar que o atendimento de sobrancelha de '+b.client+' foi realizado hoje? A contagem dos 20 dias começará agora.'))return;
- try{await requestApi(API+'/'+encodeURIComponent(b.id),{method:'PATCH',body:JSON.stringify({action:'complete'})});await refreshFromCloud();closeForm();alert('Atendimento marcado como realizado. O lembrete será exibido após 20 dias.');}
+ const scheduled=new Date(b.date+'T'+b.time+':00-03:00');
+ if(scheduled.getTime()>Date.now()){alert('Este atendimento ainda não chegou ao horário agendado. Ele só poderá ser marcado como realizado depois do atendimento.');return;}
+ const serviceDate=fromIso(b.date).toLocaleDateString('pt-BR');
+ if(!confirm('Confirmar que o atendimento de sobrancelha de '+b.client+' foi realmente realizado em '+serviceDate+' às '+b.time+'? A contagem dos 20 dias será feita a partir da data do atendimento.'))return;
+ try{await requestApi(API+'/'+encodeURIComponent(b.id),{method:'PATCH',body:JSON.stringify({action:'complete'})});await refreshFromCloud();closeForm();alert('Atendimento marcado como realizado. O lembrete ficará disponível 20 dias após a data do serviço.');}
  catch(e){alert('Não foi possível registrar a conclusão: '+e.message);}
 }
 async function markContactDone(id){
