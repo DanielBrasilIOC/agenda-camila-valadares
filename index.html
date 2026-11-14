@@ -68,7 +68,13 @@ async function markAsCompleted(){
  const scheduled=new Date(b.date+'T'+b.time+':00-03:00');
  if(scheduled.getTime()>Date.now()){alert('Este atendimento ainda não chegou ao horário agendado. Ele só poderá ser marcado como realizado depois do atendimento.');return;}
  const serviceDate=fromIso(b.date).toLocaleDateString('pt-BR');
- const service=String(b.service??'').trim();
+ const visibleService=String($('service').value||'').split('|')[0].trim();
+ const storedService=String(b.service??'').trim();
+ if(!visibleService||normalizeServiceName(visibleService)!==normalizeServiceName(storedService)){
+  alert('O serviço exibido no formulário ('+(visibleService||'não identificado')+') não corresponde ao serviço salvo ('+(storedService||'não identificado')+'). Feche e reabra o agendamento antes de confirmar a realização. Nenhuma alteração foi enviada.');
+  return;
+ }
+ const service=visibleService;
  const eyebrow=isEyebrowService(service);
  const question=eyebrow
   ? 'Confirmar que o atendimento de sobrancelha ('+service+') de '+b.client+' foi realmente realizado em '+serviceDate+' às '+b.time+'? A contagem dos 20 dias será feita a partir da data do atendimento.'
