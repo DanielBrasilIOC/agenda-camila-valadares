@@ -72,18 +72,25 @@ jobs:
           const origin = "https://danielbrasilioc.github.io";
           const id = randomUUID();
           const conflictId = randomUUID();
-          const payload = { id, client: "Teste automatizado Agenda Camila", phone: "00000000000", service: "Teste técnico", duration: 60, date: "2099-12-31", time: "10:00", notes: "Teste temporário de persistência" };
+          const payload = { id, client: "Teste automatizado Agenda Camila", phone: "00000000000", service: "Teste técnico", duration: 60, date: "2020-01-01", time: "10:00", notes: "Teste temporário de persistência" };
           const request = (path, init={}) => fetch(base + path, init);
           let created = false;
           try {
             const preflight = await request("/api/appointments", { method:"OPTIONS", headers:{ Origin:origin, "Access-Control-Request-Method":"POST", "Access-Control-Request-Headers":"content-type" }});
-            if (preflight.status !== 204 || preflight.headers.get("access-control-allow-origin") !== origin) throw new Error("Falha no preflight CORS: " + preflight.status);
+            if (preflight.status !== 204 || preflight.headers.get("access-control-allow-origin") !== origin) throw new Error("Falha no preflight CORS POST: " + preflight.status);
+            const patchPreflight = await request("/api/appointments/" + id, { method:"OPTIONS", headers:{ Origin:origin, "Access-Control-Request-Method":"PATCH", "Access-Control-Request-Headers":"content-type" }});
+            if (patchPreflight.status !== 204 || patchPreflight.headers.get("access-control-allow-methods")?.split(",").map(x=>x.trim()).includes("PATCH") !== true) throw new Error("Falha no preflight CORS PATCH: " + patchPreflight.status);
             const post = await request("/api/appointments", { method:"POST", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify(payload) });
             if (!post.ok) throw new Error("POST falhou: " + post.status + " " + await post.text());
             created = true;
             const get = await request("/api/appointments", { headers:{ Origin:origin } });
             const rows = await get.json();
             if (!get.ok || !Array.isArray(rows) || !rows.some(x => x.id === id && x.client === payload.client)) throw new Error("GET não confirmou a gravação no D1.");
+            const patch = await request("/api/appointments/" + id, { method:"PATCH", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({action:"complete"}) });
+            if (!patch.ok) throw new Error("PATCH de conclusão falhou: " + patch.status + " " + await patch.text());
+            const afterPatch = await request("/api/appointments", { headers:{ Origin:origin } });
+            const completedRows = await afterPatch.json();
+            if (!afterPatch.ok || !completedRows.some(x => x.id === id && x.completed_at)) throw new Error("PATCH não persistiu completed_at no D1.");
             const conflict = await request("/api/appointments", { method:"POST", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({...payload,id:conflictId}) });
             if (conflict.status !== 409) throw new Error("Conflito de horário deveria retornar 409, retornou " + conflict.status);
             const del = await request("/api/appointments/" + id, { method:"DELETE", headers:{ Origin:origin } });
