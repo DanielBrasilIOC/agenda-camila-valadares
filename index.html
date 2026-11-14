@@ -47,7 +47,7 @@ function sendConfirmationWhatsApp(){if(!confirmationBooking)return;let digits=St
 
 
 function addDays(date,days){let d=fromIso(date);d.setDate(d.getDate()+days);return d;}
-function reminderText(b){return 'Oi, '+b.client+'! 💖 Tudo bem? Aqui é a Camila. Estou passando para saber se você gostaria de agendar a manutenção da sua sobrancelha. Será um prazer te atender novamente! 🌷';}
+function reminderText(b){return 'Oi, '+b.client+'! 💖🌷 Tudo bem com você?\n\nJá faz alguns dias desde o nosso último atendimento, e estou passando com muito carinho para lembrar que talvez esteja chegando a hora de cuidar novamente das suas sobrancelhas. ✨\n\nQue tal reservar um tempinho para você e deixar seu olhar ainda mais bonito e valorizado? 😍\n\nSerá um prazer receber você novamente e cuidar de cada detalhe com todo carinho que você merece! 💕\n\nMe chama por aqui para encontrarmos o melhor horário para você. Será muito bom ter você de volta! 🥰\n\nCom carinho,\nCamila Valadares 💖';}
 function openReminderWhatsApp(b){let digits=String(b.phone||'').replace(/\\D/g,'');if(digits.length<10){alert('Cadastre um WhatsApp com DDD para esta cliente.');return;}if(!digits.startsWith('55'))digits='55'+digits;window.open('https://wa.me/'+digits+'?text='+encodeURIComponent(reminderText(b)),'_blank','noopener,noreferrer');}
 function renderMaintenance(){
  const today=fromIso(iso(new Date()));
