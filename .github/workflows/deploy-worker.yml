@@ -71,7 +71,7 @@ jobs:
           const origin = "https://danielbrasilioc.github.io";
           const id = randomUUID();
           const conflictId = randomUUID();
-          const payload = { id, client: "Teste automatizado Agenda Camila", phone: "00000000000", service: "Teste técnico", duration: 60, date: "2099-12-31", time: "10:00", notes: "Teste temporário de persistência" };
+          const payload = { id, client: "Teste automatizado Agenda Camila", phone: "00000000000", service: "Sobrancelha", duration: 60, date: "2026-11-13", time: "10:00", notes: "Teste temporário de persistência" };
           const request = (path, init={}) => fetch(base + path, init);
           let created = false;
           try {
