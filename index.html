@@ -15,6 +15,7 @@
 <section class="stats"><div class="stat"><small>Agendamentos na semana</small><strong id="weekCount">0</strong></div><div class="stat"><small>Atendimentos hoje</small><strong id="todayCount">0</strong></div><div class="stat"><small>Horários livres hoje</small><strong id="freeCount">12</strong></div><div class="stat"><small>Clientes cadastradas</small><strong id="clientCount">0</strong></div></section>
 <div class="layout"><section class="panel"><div class="panel-head"><h2>Agenda semanal</h2><div class="controls"><button class="iconbtn" id="prev">‹</button><div class="week-label" id="weekLabel"></div><button class="iconbtn" id="next">›</button></div></div><div class="week"><div class="grid" id="calendar"></div></div><div class="mobile-week" id="mobileWeek"></div></section>
 <aside class="panel side"><h3>Próximos atendimentos</h3><div id="upcoming" class="side-empty">Nenhum agendamento cadastrado.</div></aside></div>
+<section class="panel maintenance"><h2>Manutenção de sobrancelha</h2><p class="maintenance-intro">Clientes com atendimento marcado como realizado há 20 dias ou mais. Entre em contato para oferecer a manutenção.</p><div id="maintenanceList" class="side-empty">Nenhuma manutenção pendente no momento.</div></section>
 <p class="foot">Agenda Camila Valadares · Horário de Brasília · Atendimento personalizado</p></main>
 <div class="modal" id="modal"><form class="dialog" id="form"><h2 id="formTitle">Novo agendamento</h2><div class="fields">
 <div class="field full"><label for="client">Nome da cliente</label><input id="client" required maxlength="70" placeholder="Nome completo"></div>
@@ -69,7 +70,7 @@ async function markContactDone(id){
  try{await requestApi(API+'/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({action:'contacted'})});await refreshFromCloud();}
  catch(e){alert('Não foi possível atualizar o lembrete: '+e.message);}
 }
-\nfunction weekDays(){let m=sunday(new Date());m.setDate(m.getDate()+weekOffset*7);return Array.from({length:7},(_,i)=>{let d=new Date(m);d.setDate(m.getDate()+i);return d})}
+function weekDays(){let m=sunday(new Date());m.setDate(m.getDate()+weekOffset*7);return Array.from({length:7},(_,i)=>{let d=new Date(m);d.setDate(m.getDate()+i);return d})}
 function render(){let days=weekDays(),start=days[0],end=days[6];$('weekLabel').textContent=fmt(start)+' — '+fmt(end);let cal=$('calendar');cal.innerHTML='<div class="dayhead"></div>'+days.map(d=>'<div class="dayhead '+(iso(d)===iso(new Date())?'today':'')+'"><b>'+['DOM','SEG','TER','QUA','QUI','SEX','SÁB'][d.getDay()]+'</b><span>'+fmt(d)+'</span></div>').join('');
 TIMES.forEach(t=>{cal.insertAdjacentHTML('beforeend','<div class="time">'+(t.endsWith(':00')?t:'')+'</div>');days.forEach(d=>{let cell=document.createElement('div');cell.className='slot';cell.dataset.date=iso(d);cell.dataset.time=t;cal.appendChild(cell)})});
 bookings.forEach(b=>{let cell=cal.querySelector('.slot[data-date="'+b.date+'"][data-time="'+b.time+'"]');if(!cell)return;let el=document.createElement('div');el.className='booking';el.style.height=Math.max(24,b.duration/30*31-6)+'px';el.innerHTML='<strong>'+esc(b.client)+'</strong><em>'+b.time+' · '+esc(b.service)+'</em>';el.title='Toque para editar';el.onclick=e=>{e.stopPropagation();openForm(b.id)};cell.appendChild(el)});
