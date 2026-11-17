@@ -1,0 +1,35 @@
+name: Validate Agenda Camila
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate Worker and browser JavaScript syntax
+        run: |
+          set -euo pipefail
+          node --check worker.js
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const html = fs.readFileSync("index.html", "utf8");
+          const scripts = [...html.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)];
+          if (scripts.length !== 1) throw new Error("Era esperado exatamente um bloco de JavaScript no index.html.");
+          fs.writeFileSync("/tmp/agenda-camila-app.js", scripts[0][1]);
+          if (!html.includes('id="recurrenceEnabled"') || !html.includes('buildRecurrenceDates') || !html.includes('/recurring')) {
+            throw new Error("A interface ou a integração de recorrência não foi encontrada.");
+          }
+          NODE
+          node --check /tmp/agenda-camila-app.js
