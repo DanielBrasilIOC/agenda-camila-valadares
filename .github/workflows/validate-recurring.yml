@@ -25,7 +25,7 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from "node:fs";
           const html = fs.readFileSync("index.html", "utf8");
-          const scripts = [...html.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)];
+          const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
           if (scripts.length !== 1) throw new Error("Era esperado exatamente um bloco de JavaScript no index.html.");
           fs.writeFileSync("/tmp/agenda-camila-app.js", scripts[0][1]);
           if (!html.includes('id="recurrenceEnabled"') || !html.includes('buildRecurrenceDates') || !html.includes('/recurring')) {
