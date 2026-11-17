@@ -86,7 +86,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
-    if(request.method==="OPTIONS" && (path==="/api/appointments" || path.startsWith("/api/appointments/") || path==="/api/contacts" || path.startsWith("/api/contacts/"))) {
+    if(request.method==="OPTIONS" && (path==="/api/appointments" || path.startsWith("/api/appointments/") || path==="/api/contacts" || path.startsWith("/api/contacts/") || path==="/api/birthday-messages")) {
       return new Response(null,{status:204,headers:corsHeaders(request)});
     }
     if (path === "/" || path === "/health") {
@@ -194,9 +194,6 @@ export default {
           const contact=await env.DB.prepare("SELECT id, name, birthday FROM contacts WHERE id=?").bind(contactId).first();
           if(!contact)return out({error:"Contato não encontrado."},404,request);
           if(!contact.birthday)return out({error:"A cliente não possui aniversário cadastrado."},409,request);
-          const monthDay=contact.birthday.slice(5);
-          const expectedYear=year+"-"+monthDay;
-          if(!isValidDate(expectedYear))return out({error:"Data de aniversário inválida."},400,request);
           await env.DB.prepare("INSERT OR IGNORE INTO birthday_messages (contact_id, year, contact_name) VALUES (?, ?, ?)").bind(contactId,year,contact.name).run();
           const saved=await env.DB.prepare("SELECT contact_id, year, contact_name, sent_at FROM birthday_messages WHERE contact_id=? AND year=?").bind(contactId,year).first();
           return out({ok:true,alreadyRegistered:true,...saved},200,request);
