@@ -44,11 +44,9 @@ async function ensureSchema(db) {
   await db.prepare("CREATE TABLE IF NOT EXISTS app_migrations (key TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))").run();
   const duplicateNamesMigration = await db.prepare("SELECT key FROM app_migrations WHERE key = ?").bind("contacts_allow_duplicate_names_v1").first();
   if (!duplicateNamesMigration) {
-    await db.batch([
-      db.prepare("DROP INDEX IF EXISTS idx_contacts_name_unique"),
-      db.prepare("CREATE INDEX IF NOT EXISTS idx_contacts_name_lookup ON contacts(lower(trim(name)))"),
-      db.prepare("INSERT OR IGNORE INTO app_migrations (key) VALUES (?)").bind("contacts_allow_duplicate_names_v1")
-    ]);
+    await db.prepare("DROP INDEX IF EXISTS idx_contacts_name_unique").run();
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_contacts_name_lookup ON contacts(lower(trim(name)))").run();
+    await db.prepare("INSERT OR IGNORE INTO app_migrations (key) VALUES (?)").bind("contacts_allow_duplicate_names_v1").run();
   }
 
   const migration = await db.prepare("SELECT key FROM app_migrations WHERE key = ?").bind("contacts_backfill_v1").first();
