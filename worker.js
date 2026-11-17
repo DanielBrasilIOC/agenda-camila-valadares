@@ -29,7 +29,7 @@ async function ensureSchema(db) {
   await db.prepare("CREATE TABLE IF NOT EXISTS contacts (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT NOT NULL, phone_normalized TEXT NOT NULL UNIQUE, birthday TEXT, notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))").run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name COLLATE NOCASE)").run();
 }
-function normalizePhone(value) { return String(value??"").replace(/\\D/g,""); }
+function normalizePhone(value) { return String(value??"").replace(/\D/g,""); }
 function validContact(body) {
   const name=typeof body?.name==="string"?body.name.trim():"";
   const phone=typeof body?.phone==="string"?body.phone.trim():"";
