@@ -166,3 +166,42 @@ jobs:
             await request("/api/contacts/" + duplicateId, { method:"DELETE" });
           }
           NODE
+
+      - name: Smoke test atomic recurring appointments
+        run: |
+          node --input-type=module <<'NODE'
+          import { randomUUID } from "node:crypto";
+          const base = "https://agenda-camila-valadares.brasil-moura.workers.dev";
+          const origin = "https://danielbrasilioc.github.io";
+          const group = randomUUID();
+          const name = "Teste recorrencia Agenda Camila " + group.slice(0, 8);
+          const dates = ["2098-02-01", "2098-02-08"];
+          const ids = [randomUUID(), randomUUID()];
+          const makeItems = (groupId, itemIds) => dates.map((date, index) => ({
+            id:itemIds[index], client:name, phone:"", service:"Teste recorrencia", duration:30,
+            date, time:"10:00", notes:"Teste automatizado temporario", service_price:0,
+            recurrence_group_id:groupId, recurrence_index:index+1, recurrence_total:2
+          }));
+          const request = (path, init={}) => fetch(base+path,{...init,headers:{Origin:origin,"Content-Type":"application/json",...(init.headers||{})}});
+          const cleanup = async itemIds => { for (const id of itemIds) await request("/api/appointments/"+id,{method:"DELETE"}); };
+          try {
+            const post = await request("/api/appointments/recurring",{method:"POST",body:JSON.stringify({recurrenceGroupId:group,appointments:makeItems(group,ids)})});
+            if(post.status!==201) throw new Error("POST recorrente falhou: "+post.status+" "+await post.text());
+            const rowsResponse=await request("/api/appointments");
+            const rows=await rowsResponse.json();
+            if(!rowsResponse.ok||!ids.every(id=>rows.some(x=>x.id===id))) throw new Error("A série não foi persistida integralmente.");
+            const groupRows=rows.filter(x=>x.recurrence_group_id===group);
+            if(groupRows.length!==2||groupRows.some(x=>x.recurrence_total!==2)) throw new Error("Metadados da recorrência não foram preservados.");
+            const conflictIds=[randomUUID(),randomUUID()], conflictGroup=randomUUID();
+            const conflict=await request("/api/appointments/recurring",{method:"POST",body:JSON.stringify({recurrenceGroupId:conflictGroup,appointments:makeItems(conflictGroup,conflictIds)})});
+            if(conflict.status!==409) throw new Error("A série conflitante deveria retornar 409, retornou "+conflict.status);
+            const after=await request("/api/appointments"), afterRows=await after.json();
+            if(conflictIds.some(id=>afterRows.some(x=>x.id===id))) throw new Error("Uma parte da série conflitante foi gravada; atomicidade não confirmada.");
+            await cleanup(ids);
+            const contacts=await request("/api/contacts"), contactRows=await contacts.json();
+            for(const contact of contactRows.filter(x=>x.name===name)) await request("/api/contacts/"+contact.id,{method:"DELETE"});
+            console.log("OK: série recorrente, metadados, conflito 409 e rollback atômico confirmados.");
+          } finally {
+            await cleanup(ids);
+          }
+          NODE
