@@ -44,6 +44,13 @@ async function ensureSchema(db) {
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   )`).run();
+  await db.prepare(`CREATE TABLE IF NOT EXISTS birthday_messages (
+    contact_id TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    contact_name TEXT NOT NULL,
+    sent_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    PRIMARY KEY (contact_id, year)
+  )`).run();
   await db.prepare("CREATE TABLE IF NOT EXISTS app_migrations (key TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))").run();
   const duplicateNamesMigration = await db.prepare("SELECT key FROM app_migrations WHERE key = ?").bind("contacts_allow_duplicate_names_v1").first();
   if (!duplicateNamesMigration) {
@@ -79,7 +86,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
-    if(request.method==="OPTIONS" && (path==="/api/appointments" || path.startsWith("/api/appointments/") || path==="/api/contacts" || path.startsWith("/api/contacts/"))) {
+    if(request.method==="OPTIONS" && (path==="/api/appointments" || path.startsWith("/api/appointments/") || path==="/api/contacts" || path.startsWith("/api/contacts/") || path==="/api/birthday-messages")) {
       return new Response(null,{status:204,headers:corsHeaders(request)});
     }
     if (path === "/" || path === "/health") {
@@ -169,6 +176,30 @@ export default {
         if (/UNIQUE|constraint/i.test(message)) return out({ error: "Já existe outro contato com esse nome." }, 409, request);
         return out({ error: "Não foi possível atualizar o contato." }, 500, request);
       }
+    }
+
+    if (path === "/api/birthday-messages") {
+      if (!env.DB) return out({error:"Binding D1 DB não configurado no Worker."},503,request);
+      try {
+        await ensureSchema(env.DB);
+        if (request.method === "GET") {
+          const {results=[]}=await env.DB.prepare("SELECT contact_id, year, contact_name, sent_at FROM birthday_messages ORDER BY year DESC, sent_at DESC").all();
+          return out(results,200,request);
+        }
+        if (request.method === "POST") {
+          let body;try{body=await request.json();}catch{return out({error:"Corpo JSON inválido."},400,request);}
+          const contactId=typeof body?.contactId==="string"?body.contactId.trim():"";
+          const year=Number(body?.year);
+          if(!contactId||!Number.isInteger(year)||year<2000||year>2100)return out({error:"Contato ou ano do aniversário inválido."},400,request);
+          const contact=await env.DB.prepare("SELECT id, name, birthday FROM contacts WHERE id=?").bind(contactId).first();
+          if(!contact)return out({error:"Contato não encontrado."},404,request);
+          if(!contact.birthday)return out({error:"A cliente não possui aniversário cadastrado."},409,request);
+          await env.DB.prepare("INSERT OR IGNORE INTO birthday_messages (contact_id, year, contact_name) VALUES (?, ?, ?)").bind(contactId,year,contact.name).run();
+          const saved=await env.DB.prepare("SELECT contact_id, year, contact_name, sent_at FROM birthday_messages WHERE contact_id=? AND year=?").bind(contactId,year).first();
+          return out({ok:true,alreadyRegistered:true,...saved},200,request);
+        }
+        return out({error:"Método não permitido."},405,request);
+      } catch(error) { return out({error:"Não foi possível consultar ou registrar o histórico de aniversários."},500,request); }
     }
 
     if (path === "/api/appointments/recurring" && request.method === "POST") {
