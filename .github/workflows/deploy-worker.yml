@@ -64,6 +64,10 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler deploy --config wrangler.jsonc
 
+      - name: Import initial contacts into D1
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[importar-contatos]')
+        run: node scripts/import-contacts.mjs
+
       - name: Smoke test API, CORS, conflict and D1 persistence
         run: |
           node --input-type=module <<'NODE'
