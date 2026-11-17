@@ -89,11 +89,11 @@ function nextBirthdayDate(value, reference){
  return candidate;
 }
 function birthdayWhatsAppText(contact){
- return 'Oi, '+contact.name+'! 💖🎂\\n\\nA Camila deseja a você um feliz aniversário! Que este novo ciclo seja repleto de saúde, amor, alegrias e muitas conquistas. Que não faltem motivos para sorrir e momentos especiais para celebrar! 🌷✨\\n\\nAproveite muito o seu dia! Você merece tudo de melhor! 💕\\n\\nCom carinho,\\nCamila Valadares 💖';
+ return 'Oi, '+contact.name+'! 💖🎂\n\nA Camila deseja a você um feliz aniversário! Que este novo ciclo seja repleto de saúde, amor, alegrias e muitas conquistas. Que não faltem motivos para sorrir e momentos especiais para celebrar! 🌷✨\n\nAproveite muito o seu dia! Você merece tudo de melhor! 💕\n\nCom carinho,\nCamila Valadares 💖';
 }
 function openBirthdayWhatsApp(id){
  const c=contacts.find(x=>String(x.id)===String(id));if(!c)return;
- let digits=String(c.phone||c.phone_secondary||'').replace(/\\D/g,'');
+ let digits=String(c.phone||c.phone_secondary||'').replace(/\D/g,'');
  if(digits.length<10){alert('Cadastre um WhatsApp com DDD para '+c.name+'.');return;}
  if(!digits.startsWith('55'))digits='55'+digits;
  window.open('https://wa.me/'+digits+'?text='+encodeURIComponent(birthdayWhatsAppText(c)),'_blank','noopener,noreferrer');
