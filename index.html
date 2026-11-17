@@ -118,7 +118,7 @@ function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function renderContactsError(error){$('contactsSummary').textContent='Não foi possível carregar os contatos.';$('contactsList').textContent=error?.message||'Erro de comunicação.';}
 async function refreshContacts(){const data=await requestApi(CONTACTS_API);if(!Array.isArray(data))throw new Error('A resposta de contatos veio em formato inesperado.');contacts=data;contactsLoaded=true;refreshClientSuggestions();renderContacts();$('clientCount').textContent=String(contacts.length);}
 let activeClientSuggestion=-1,selectedAppointmentContact=null;
-function normalizeClientName(value){return String(value||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLocaleLowerCase('pt-BR').replace(/\\s+/g,' ');}
+function normalizeClientName(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLocaleLowerCase('pt-BR').replace(/\s+/g,' ');}
 function refreshClientSuggestions(){
   const list=$('clientSuggestions');
   if(!list)return;
@@ -169,7 +169,7 @@ $('deleteContact').onclick=()=>{if(editingContact)openDeleteContact(editingConta
 $('contactsList').onclick=e=>{const edit=e.target.closest('[data-contact-edit]'),del=e.target.closest('[data-contact-delete]');if(edit)openContactForm(edit.dataset.contactEdit);if(del)openDeleteContact(del.dataset.contactDelete);};
 $('cancelDeleteContact').onclick=closeDeleteContact;$('confirmDeleteContact').onclick=confirmDeleteContact;
 $('contactSearch').oninput=renderContacts;
-$('client').addEventListener('input',()=>{selectedAppointmentContact=null;const typed=$('client').value.trim();if(!typed){hideClientSuggestions();$('phone').value='';return;}showClientSuggestions();const exact=contacts.filter(c=>normalizeClientName(c.name)===normalizeClientName(typed));if(exact.length===1)fillAppointmentContact(exact[0]);});
+$('client').addEventListener('input',()=>{const wasSelected=!!selectedAppointmentContact;selectedAppointmentContact=null;if(wasSelected)$('phone').value='';const typed=$('client').value.trim();if(!typed){hideClientSuggestions();return;}showClientSuggestions();const exact=contacts.filter(c=>normalizeClientName(c.name)===normalizeClientName(typed));if(exact.length===1)fillAppointmentContact(exact[0]);});
 $('client').addEventListener('change',autofillAppointmentContact);
 $('client').addEventListener('keydown',e=>{const list=$('clientSuggestions'),items=[...list.querySelectorAll('.client-suggestion')];if(e.key==='Escape'){hideClientSuggestions();return;}if(!items.length)return;if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();activeClientSuggestion=(activeClientSuggestion+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;items.forEach((item,i)=>item.classList.toggle('active',i===activeClientSuggestion));items[activeClientSuggestion].scrollIntoView({block:'nearest'});}else if(e.key==='Enter'&&activeClientSuggestion>=0){e.preventDefault();const id=items[activeClientSuggestion].dataset.contactId;const contact=contacts.find(c=>String(c.id)===String(id));fillAppointmentContact(contact);}});
 document.addEventListener('click',e=>{if(!e.target.closest('.client-field'))hideClientSuggestions();});
