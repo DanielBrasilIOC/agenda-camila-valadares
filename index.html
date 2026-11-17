@@ -53,8 +53,8 @@ async function requestContacts(path='',options={}){
  if(!response.ok){const error=new Error(data?.error||'Falha ao acessar os contatos ('+response.status+').');error.status=response.status;throw error;}
  return data;
 }
-function normalizedPhone(value){return String(value??'').replace(/\\D/g,'');}
-function normalizeSearch(value){return String(value??'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLocaleLowerCase('pt-BR').trim();}
+function normalizedPhone(value){return String(value??'').replace(/\D/g,'');}
+function normalizeSearch(value){return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR').trim();}
 async function loadContacts(){
  const data=await requestContacts();
  if(!Array.isArray(data))throw new Error('A resposta dos contatos veio em formato inesperado.');
