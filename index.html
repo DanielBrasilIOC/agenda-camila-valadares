@@ -25,7 +25,7 @@
 </section>
 <p class="foot">Agenda Camila Valadares · Horário de Brasília · Atendimento personalizado</p></main>
 <div class="modal" id="modal"><form class="dialog" id="form"><h2 id="formTitle">Novo agendamento</h2><div class="fields">
-<div class="field full"><label for="client">Nome da cliente</label><input id="client" required maxlength="70" placeholder="Nome completo"></div>
+<div class="field full"><label for="client">Nome da cliente</label><input id="client" list="clientSuggestions" required maxlength="70" placeholder="Digite ou selecione a cliente"><datalist id="clientSuggestions"></datalist></div>
 <div class="field"><label for="phone">WhatsApp da cliente</label><input id="phone" maxlength="20" required placeholder="(00) 00000-0000"></div>
 <div class="field"><label for="service">Tipo de serviço</label><select id="service" required><optgroup label="Manicure tradicional"><option value="Pé e mão|90|55">Pé e mão — R$ 55,00</option><option value="Mão|60|30">Mão — R$ 30,00</option><option value="Pé e mão + spa dos pés|120|80">Pé e mão + spa dos pés — R$ 80,00</option><option value="Pé + spa|90|60">Pé + spa — R$ 60,00</option><option value="Spa|60|25">Spa — R$ 25,00</option><option value="Pé|60|35">Pé — R$ 35,00</option><option value="Esmaltação|30|15">Esmaltação — R$ 15,00</option><option value="Francesinha|15|5">Francesinha — R$ 5,00</option><option value="Motorzinho|15|5">Motorzinho — R$ 5,00</option></optgroup><optgroup label="Sobrancelhas"><option value="Design|30|45">Design — R$ 45,00</option><option value="Limpeza pinça|30|28">Limpeza pinça — R$ 28,00</option><option value="Limpeza cera|30|35">Limpeza cera — R$ 35,00</option><option value="Henna|45|60">Henna — R$ 60,00</option><option value="Tintura|45|80">Tintura — R$ 80,00</option><option value="Aplicação de tintura|30|45">Aplicação de tintura — R$ 45,00</option></optgroup><optgroup label="Depilação egípcia (linha) e cera"><option value="Buço (linha)|15|25">Buço (linha) — R$ 25,00</option><option value="Queixo (linha)|15|25">Queixo (linha) — R$ 25,00</option><option value="Buço (cera)|15|20">Buço (cera) — R$ 20,00</option><option value="Queixo (cera)|15|20">Queixo (cera) — R$ 20,00</option><option value="Nariz (cera)|15|20">Nariz (cera) — R$ 20,00</option></optgroup><optgroup label="Bloqueio de horário"><option value="Bloqueio de horário|30|0">Bloquear horário · 30 min</option><option value="Bloqueio de horário|60|0">Bloquear horário · 1h</option><option value="Bloqueio de horário|90|0">Bloquear horário · 1h30</option><option value="Bloqueio de horário|120|0">Bloquear horário · 2h</option></optgroup></select></div>
 <div class="field"><label for="date">Data</label><input id="date" type="date" required></div>
@@ -116,7 +116,27 @@ let used=bookings.filter(b=>b.date===today).reduce((n,b)=>n+b.duration,0);$('fre
 let next=bookings.filter(b=>b.date>=today).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).slice(0,5);$('upcoming').innerHTML=next.length?next.map(b=>'<div class="appt"><span class="mini">'+b.time+'</span><strong>'+esc(b.client)+'</strong><small>'+fmt(fromIso(b.date))+' · '+esc(b.service)+'</small></div>').join(''):'Nenhum próximo atendimento.'}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function renderContactsError(error){$('contactsSummary').textContent='Não foi possível carregar os contatos.';$('contactsList').textContent=error?.message||'Erro de comunicação.';}
-async function refreshContacts(){const data=await requestApi(CONTACTS_API);if(!Array.isArray(data))throw new Error('A resposta de contatos veio em formato inesperado.');contacts=data;contactsLoaded=true;renderContacts();$('clientCount').textContent=String(contacts.length);}
+async function refreshContacts(){const data=await requestApi(CONTACTS_API);if(!Array.isArray(data))throw new Error('A resposta de contatos veio em formato inesperado.');contacts=data;contactsLoaded=true;refreshClientSuggestions();renderContacts();$('clientCount').textContent=String(contacts.length);}
+function refreshClientSuggestions(){
+  const list=$('clientSuggestions');
+  if(!list)return;
+  list.innerHTML=contacts.map(c=>'<option value="'+esc(c.name)+'">'+(c.phone?'WhatsApp: '+esc(c.phone):'Telefone não cadastrado')+'</option>').join('');
+}
+function autofillAppointmentContact(){
+  const name=$('client').value.trim();
+  if(!name || name==='Horário bloqueado')return;
+  const matches=contacts.filter(c=>String(c.name||'').trim().toLocaleLowerCase('pt-BR')===name.toLocaleLowerCase('pt-BR'));
+  if(matches.length===1){
+    const contact=matches[0];
+    if(contact.phone)$('phone').value=contact.phone;
+  }else if(matches.length>1){
+    const current=$('phone').value.trim();
+    const exact=matches.filter(c=>c.phone===current || c.phone_secondary===current);
+    if(exact.length===1)return;
+    const withPhone=matches.filter(c=>c.phone);
+    if(withPhone.length===1)$('phone').value=withPhone[0].phone;
+  }
+}
 function renderContacts(){const query=$('contactSearch').value.trim().toLocaleLowerCase('pt-BR');const filtered=contacts.filter(c=>[c.name,c.phone,c.phone_secondary].some(v=>String(v||'').toLocaleLowerCase('pt-BR').includes(query)));$('contactsSummary').textContent=contacts.length+' contato(s) cadastrado(s)';if(!filtered.length){$('contactsList').innerHTML='<div class="side-empty">'+(query?'Nenhum contato encontrado.':'Nenhum contato cadastrado ainda.')+'</div>';return;}$('contactsList').innerHTML=filtered.map(c=>'<article class="contact-row"><div class="contact-main"><strong>'+esc(c.name)+'</strong><small>'+(c.phone?'WhatsApp: '+esc(c.phone):'Telefone pendente')+(c.phone_secondary?'<br>WhatsApp adicional: '+esc(c.phone_secondary):'')+(c.birthday?'<br>Aniversário: '+new Date(c.birthday+'T12:00:00').toLocaleDateString('pt-BR'):'')+(c.notes?'<br>'+esc(c.notes):'')+'</small></div><div class="contact-actions"><button type="button" class="btn" data-contact-edit="'+esc(c.id)+'">Editar</button><button type="button" class="btn danger" data-contact-delete="'+esc(c.id)+'">Excluir</button></div></article>').join('');}
 function openContactForm(id=null){editingContact=id;const c=contacts.find(x=>x.id===id);$('contactFormTitle').textContent=c?'Editar contato':'Novo contato';$('contactName').value=c?.name||'';$('contactPhone').value=c?.phone||'';$('contactPhoneSecondary').value=c?.phone_secondary||'';$('contactBirthday').value=c?.birthday||'';$('contactNotes').value=c?.notes||'';$('deleteContact').style.display=c?'inline-block':'none';$('contactModal').classList.add('open');}
 function closeContactForm(){$('contactModal').classList.remove('open');editingContact=null;}
@@ -128,6 +148,7 @@ $('deleteContact').onclick=()=>{if(editingContact)openDeleteContact(editingConta
 $('contactsList').onclick=e=>{const edit=e.target.closest('[data-contact-edit]'),del=e.target.closest('[data-contact-delete]');if(edit)openContactForm(edit.dataset.contactEdit);if(del)openDeleteContact(del.dataset.contactDelete);};
 $('cancelDeleteContact').onclick=closeDeleteContact;$('confirmDeleteContact').onclick=confirmDeleteContact;
 $('contactSearch').oninput=renderContacts;
+$('client').addEventListener('change',autofillAppointmentContact);$('client').addEventListener('blur',autofillAppointmentContact);
 function openForm(id=null,date=null,time=null){editing=id;let b=bookings.find(x=>x.id===id);$('formTitle').textContent=b?'Editar agendamento':'Novo agendamento';$('client').value=b?.client||'';$('phone').value=b?.phone||'';if(b){let option=[...$('service').options].find(o=>o.value.split('|')[0]===b.service);if(!option){option=new Option(b.service+' · serviço anterior',b.service+'|'+(b.duration||60)+'|'+(b.service_price||0));$('service').add(option);} $('service').value=option.value;}else $('service').value='Pé e mão|90|55';$('date').value=b?.date||date||iso(new Date());$('time').value=b?.time||time||'09:00';$('notes').value=b?.notes||'';$('delete').style.display=b?'inline-block':'none';$('markCompleted').style.display=b&&!String(b.service).startsWith('Bloqueio')?'inline-block':'none';$('markCompleted').disabled=!!b?.completed_at;$('markCompleted').textContent=b?.completed_at?'✓ Atendimento já realizado':'Marcar como realizado';$('markCompleted').title=b?.completed_at?'Este atendimento já foi confirmado como realizado.':'Confirme somente se a cliente compareceu e recebeu o serviço.';$('markCompleted').style.opacity=b?.completed_at?'.7':'1';syncBlockField();$('modal').classList.add('open')}
 function syncBlockField(){let blocked=$('service').value.startsWith('Bloqueio de horário|');$('client').readOnly=blocked;if(blocked)$('client').value='Horário bloqueado';else if($('client').value==='Horário bloqueado')$('client').value=''}
 function closeForm(){$('modal').classList.remove('open');editing=null}
