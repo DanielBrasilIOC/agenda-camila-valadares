@@ -41,8 +41,15 @@ async function ensureSchema(db) {
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   )`).run();
-  await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_name_unique ON contacts(lower(trim(name)))").run();
-  await db.prepare("CREATE TABLE IF NOT EXISTS app_migrations (key TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))").run();
+  await db.prepare("CREATE TABLE IF NOT EXISTS app_migrations (key TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))").run();
+  const duplicateNamesMigration = await db.prepare("SELECT key FROM app_migrations WHERE key = ?").bind("contacts_allow_duplicate_names_v1").first();
+  if (!duplicateNamesMigration) {
+    await db.batch([
+      db.prepare("DROP INDEX IF EXISTS idx_contacts_name_unique"),
+      db.prepare("CREATE INDEX IF NOT EXISTS idx_contacts_name_lookup ON contacts(lower(trim(name)))"),
+      db.prepare("INSERT OR IGNORE INTO app_migrations (key) VALUES (?)").bind("contacts_allow_duplicate_names_v1")
+    ]);
+  }
 
   const migration = await db.prepare("SELECT key FROM app_migrations WHERE key = ?").bind("contacts_backfill_v1").first();
   if (!migration) {
@@ -101,8 +108,11 @@ export default {
               phone.length > 40 || phoneSecondary.length > 40 || notes.length > 1000) {
             return out({ error: "Dados do contato inválidos." }, 400, request);
           }
-          const existing = await env.DB.prepare("SELECT id FROM contacts WHERE lower(trim(name)) = lower(trim(?))").bind(name).first();
-          const id = existing?.id || (typeof body?.id === "string" && body.id.trim() ? body.id.trim() : crypto.randomUUID());
+          const requestedId = typeof body?.id === "string" && body.id.trim() ? body.id.trim() : "";
+          const existing = requestedId
+            ? await env.DB.prepare("SELECT id FROM contacts WHERE id = ?").bind(requestedId).first()
+            : await env.DB.prepare("SELECT id FROM contacts WHERE lower(trim(name)) = lower(trim(?)) ORDER BY created_at LIMIT 1").bind(name).first();
+          const id = existing?.id || requestedId || crypto.randomUUID();
           if (existing) {
             await env.DB.prepare("UPDATE contacts SET name=?, phone=?, phone_secondary=?, birthday=?, notes=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?")
               .bind(name, phone.trim(), phoneSecondary.trim(), birthday, notes.trim(), id).run();

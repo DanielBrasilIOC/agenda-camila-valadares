@@ -120,6 +120,7 @@ jobs:
           const base = "https://agenda-camila-valadares.brasil-moura.workers.dev";
           const origin = "https://danielbrasilioc.github.io";
           const id = randomUUID();
+          const duplicateId = randomUUID();
           const name = "Teste contatos Agenda Camila " + id.slice(0, 8);
           const request = (path, init={}) => fetch(base + path, init);
           let created = false;
@@ -142,6 +143,13 @@ jobs:
             rows = await response.json();
             contact = rows.find(x => x.id === id);
             if (!contact || contact.phone !== "+55 21 90000-0001" || contact.phone_secondary !== "+55 21 90000-0002") throw new Error("Os dois telefones não foram preservados.");
+            const duplicate = await request("/api/contacts", { method:"POST", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({ id:duplicateId, name, phone:"+55 21 90000-0003", phone_secondary:"", birthday:"", notes:"" }) });
+            if (!duplicate.ok) throw new Error("POST de contato com nome repetido falhou: " + duplicate.status + " " + await duplicate.text());
+            response = await request("/api/contacts", { headers:{ Origin:origin } });
+            rows = await response.json();
+            if (rows.filter(x => x.name === name).length !== 2 || !rows.some(x => x.id === id) || !rows.some(x => x.id === duplicateId)) throw new Error("A API não preservou dois cadastros com o mesmo nome.");
+            const duplicateDelete = await request("/api/contacts/" + duplicateId, { method:"DELETE", headers:{ Origin:origin } });
+            if (!duplicateDelete.ok) throw new Error("DELETE do segundo contato com nome repetido falhou.");
             const del = await request("/api/contacts/" + id, { method:"DELETE", headers:{ Origin:origin } });
             if (!del.ok) throw new Error("DELETE de contato falhou: " + del.status);
             created = false;
@@ -151,5 +159,6 @@ jobs:
             console.log("OK: Worker health, CORS, cadastro sem telefone, dois telefones, PATCH e DELETE confirmados.");
           } finally {
             if (created) await request("/api/contacts/" + id, { method:"DELETE" });
+            await request("/api/contacts/" + duplicateId, { method:"DELETE" });
           }
           NODE
