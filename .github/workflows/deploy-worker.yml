@@ -103,5 +103,53 @@ jobs:
           } finally {
             if (created) await request("/api/appointments/" + id, { method:"DELETE" });
             await request("/api/appointments/" + conflictId, { method:"DELETE" });
+            const contactResponse = await request("/api/contacts");
+            if (contactResponse.ok) {
+              const contacts = await contactResponse.json();
+              for (const contact of contacts.filter(x => x.name === payload.client && x.phone === "00000000000")) {
+                await request("/api/contacts/" + encodeURIComponent(contact.id), { method:"DELETE" });
+              }
+            }
+          }
+          NODE
+
+      - name: Smoke test contacts API and Worker health
+        run: |
+          node --input-type=module <<'NODE'
+          import { randomUUID } from "node:crypto";
+          const base = "https://agenda-camila-valadares.brasil-moura.workers.dev";
+          const origin = "https://danielbrasilioc.github.io";
+          const id = randomUUID();
+          const name = "Teste contatos Agenda Camila " + id.slice(0, 8);
+          const request = (path, init={}) => fetch(base + path, init);
+          let created = false;
+          try {
+            const health = await request("/");
+            const healthData = await health.json();
+            if (!health.ok || healthData.ok !== true || healthData.status !== "online") throw new Error("Health check do Worker falhou.");
+            const preflight = await request("/api/contacts", { method:"OPTIONS", headers:{ Origin:origin, "Access-Control-Request-Method":"POST", "Access-Control-Request-Headers":"content-type" }});
+            if (preflight.status !== 204 || preflight.headers.get("access-control-allow-origin") !== origin) throw new Error("Preflight CORS de contatos falhou.");
+            const post = await request("/api/contacts", { method:"POST", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({ id, name, phone:"", phone_secondary:"", birthday:"", notes:"" }) });
+            if (!post.ok) throw new Error("POST de contato sem telefone falhou: " + post.status + " " + await post.text());
+            created = true;
+            let response = await request("/api/contacts", { headers:{ Origin:origin } });
+            let rows = await response.json();
+            let contact = rows.find(x => x.id === id);
+            if (!response.ok || !contact || contact.phone !== "" || contact.phone_secondary !== "") throw new Error("Contato somente com nome não foi preservado.");
+            const patch = await request("/api/contacts/" + id, { method:"PATCH", headers:{ Origin:origin, "Content-Type":"application/json" }, body:JSON.stringify({ phone:"+55 21 90000-0001", phone_secondary:"+55 21 90000-0002" }) });
+            if (!patch.ok) throw new Error("PATCH de dois telefones falhou: " + patch.status + " " + await patch.text());
+            response = await request("/api/contacts", { headers:{ Origin:origin } });
+            rows = await response.json();
+            contact = rows.find(x => x.id === id);
+            if (!contact || contact.phone !== "+55 21 90000-0001" || contact.phone_secondary !== "+55 21 90000-0002") throw new Error("Os dois telefones não foram preservados.");
+            const del = await request("/api/contacts/" + id, { method:"DELETE", headers:{ Origin:origin } });
+            if (!del.ok) throw new Error("DELETE de contato falhou: " + del.status);
+            created = false;
+            response = await request("/api/contacts");
+            rows = await response.json();
+            if (rows.some(x => x.id === id)) throw new Error("Contato temporário permaneceu após DELETE.");
+            console.log("OK: Worker health, CORS, cadastro sem telefone, dois telefones, PATCH e DELETE confirmados.");
+          } finally {
+            if (created) await request("/api/contacts/" + id, { method:"DELETE" });
           }
           NODE
