@@ -28,7 +28,10 @@ async function ensureSchema(db) {
   for (const [n, sql] of [
     ["service_price", "ALTER TABLE appointments ADD COLUMN service_price REAL NOT NULL DEFAULT 0"],
     ["completed_at", "ALTER TABLE appointments ADD COLUMN completed_at TEXT"],
-    ["contacted_at", "ALTER TABLE appointments ADD COLUMN contacted_at TEXT"]
+    ["contacted_at", "ALTER TABLE appointments ADD COLUMN contacted_at TEXT"],
+    ["recurrence_group_id", "ALTER TABLE appointments ADD COLUMN recurrence_group_id TEXT"],
+    ["recurrence_index", "ALTER TABLE appointments ADD COLUMN recurrence_index INTEGER"],
+    ["recurrence_total", "ALTER TABLE appointments ADD COLUMN recurrence_total INTEGER"]
   ]) if (!cols.has(n)) await db.prepare(sql).run();
 
   await db.prepare(`CREATE TABLE IF NOT EXISTS contacts (
@@ -168,11 +171,76 @@ export default {
       }
     }
 
+    if (path === "/api/appointments/recurring" && request.method === "POST") {
+      if (!env.DB) return out({error:"Binding D1 DB não configurado no Worker."},503,request);
+      try {
+        await ensureSchema(env.DB);
+        let body;
+        try { body = await request.json(); } catch { return out({error:"Corpo JSON inválido."},400,request); }
+        const groupId = body?.recurrenceGroupId;
+        const items = body?.appointments;
+        if (typeof groupId !== "string" || !groupId.trim() || !Array.isArray(items) || items.length < 2 || items.length > 52) {
+          return out({error:"Série recorrente inválida. Informe de 2 a 52 ocorrências."},400,request);
+        }
+        const first = items[0], ids = new Set(), dates = new Set();
+        for (let index=0; index<items.length; index++) {
+          const item = items[index] || {}, price = Number(item.service_price), minutes = Number(item.duration);
+          if (typeof item.id !== "string" || !item.id.trim() || ids.has(item.id) ||
+              typeof item.client !== "string" || !item.client.trim() ||
+              typeof item.phone !== "string" || typeof item.service !== "string" || !item.service.trim() ||
+              !isValidDate(item.date) || !isValidTime(item.time) ||
+              !Number.isInteger(minutes) || minutes <= 0 || minutes % 15 !== 0 ||
+              !Number.isFinite(price) || price < 0 || typeof item.notes !== "string" ||
+              item.client !== first.client || item.phone !== first.phone || item.service !== first.service ||
+              minutes !== Number(first.duration) || price !== Number(first.service_price) || item.notes !== first.notes ||
+              dates.has(item.date) || item.recurrence_group_id !== groupId ||
+              item.recurrence_index !== index+1 || item.recurrence_total !== items.length) {
+            return out({error:"Os dados da série recorrente são inválidos ou inconsistentes."},400,request);
+          }
+          const [hour,minute] = item.time.split(":").map(Number), start = hour*60+minute;
+          if (start < 360 || start+minutes > 1320) return out({error:"O atendimento deve ocorrer entre 06:00 e 22:00."},400,request);
+          ids.add(item.id); dates.add(item.date);
+        }
+        const existingContact = await env.DB.prepare("SELECT id, phone, phone_secondary FROM contacts WHERE lower(trim(name)) = lower(trim(?))").bind(first.client.trim()).first();
+        const incomingPhone = first.phone.trim();
+        let contactStatement;
+        if (existingContact) {
+          const primaryPhone = existingContact.phone || incomingPhone;
+          const secondaryPhone = existingContact.phone_secondary || (incomingPhone && existingContact.phone && incomingPhone !== existingContact.phone ? incomingPhone : "");
+          contactStatement = env.DB.prepare("UPDATE contacts SET phone=?, phone_secondary=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?")
+            .bind(primaryPhone, secondaryPhone, existingContact.id);
+        } else {
+          contactStatement = env.DB.prepare("INSERT INTO contacts (id, name, phone) VALUES (?, ?, ?)")
+            .bind(crypto.randomUUID(), first.client.trim(), incomingPhone);
+        }
+        const statements = [contactStatement];
+        for (const item of items) {
+          statements.push(env.DB.prepare("INSERT INTO appointments (id, client, phone, service, duration, date, time, notes, service_price, completed_at, contacted_at, recurrence_group_id, recurrence_index, recurrence_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)")
+            .bind(item.id,item.client.trim(),item.phone.trim(),item.service.trim(),Number(item.duration),item.date,item.time,item.notes.trim(),Number(item.service_price),groupId,item.recurrence_index,item.recurrence_total));
+          const [hour,minute] = item.time.split(":").map(Number), start = hour*60+minute;
+          for (let offset=0; offset<Number(item.duration); offset+=30) {
+            const m=start+offset, slot=String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
+            statements.push(env.DB.prepare("INSERT INTO appointment_slots (appointment_id, date, slot) VALUES (?, ?, ?)").bind(item.id,item.date,slot));
+          }
+        }
+        try {
+          await env.DB.batch(statements);
+          return out({ok:true,recurrenceGroupId:groupId,ids:items.map(x=>x.id),count:items.length},201,request);
+        } catch(error) {
+          const message=String(error?.message||error);
+          if(/UNIQUE|PRIMARY KEY|constraint/i.test(message)) return out({error:"A série encontrou um horário já ocupado. Nenhuma ocorrência foi gravada; atualize a agenda e escolha outra data ou horário."},409,request);
+          return out({error:"Não foi possível gravar a série recorrente no banco D1."},500,request);
+        }
+      } catch(error) {
+        return out({error:"Erro ao validar ou gravar a série recorrente."},500,request);
+      }
+    }
+
     if (path === "/api/appointments") {
       if (!env.DB) return out({error:"Binding D1 DB não configurado no Worker."},503,request);
       try { await ensureSchema(env.DB);
         if (request.method === "GET") {
-          const {results=[]}=await env.DB.prepare("SELECT id, client, phone, service, duration, date, time, notes, created_at, service_price, completed_at, contacted_at FROM appointments ORDER BY date, time").all();
+          const {results=[]}=await env.DB.prepare("SELECT id, client, phone, service, duration, date, time, notes, created_at, service_price, completed_at, contacted_at, recurrence_group_id, recurrence_index, recurrence_total FROM appointments ORDER BY date, time").all();
           return out(results,200,request);
         }
         if (request.method === "POST") {
